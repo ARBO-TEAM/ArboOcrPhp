@@ -1,0 +1,30 @@
+{
+    "name": "arbo/ocr-php",
+    "description": "PHP wrapper for arboOCR — runs the prebuilt arboocr_demo binary via proc_open, no C++ build required.",
+    "type": "library",
+    "license": "Apache-2.0",
+    "require": {
+        "php": ">=8.1",
+        "ext-json": "*"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^10.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Arbo\\Ocr\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Arbo\\Ocr\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "arboocr-version": "v0.1.0-php1"
+    },
+    "scripts": {
+        "post-install-cmd": "Arbo\\Ocr\\Installer::run",
+        "post-update-cmd": "Arbo\\Ocr\\Installer::run"
+    }
+}
