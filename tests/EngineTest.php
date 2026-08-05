@@ -39,6 +39,16 @@ final class EngineTest extends TestCase
         $engine->recognize('/some/page.jpg');
     }
 
+    public function testRecognizeDoesNotDeadlockOnLargeStderr(): void
+    {
+        // Regression: reading stdout and stderr sequentially deadlocks once
+        // the child fills a pipe buffer on the stream not yet being read.
+        $engine = new Engine(['binPath' => $this->fakeBin(['--noisy-stderr'])]);
+        $result = $engine->recognize('/some/page.jpg');
+
+        self::assertSame('cpu', $result->backend);
+    }
+
     public function testRecognizeThrowsOnUnparseableOutput(): void
     {
         $this->expectException(OcrException::class);

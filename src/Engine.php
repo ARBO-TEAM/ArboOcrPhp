@@ -71,17 +71,31 @@ final class Engine
             $argv[] = $value;
         }
 
-        $descriptors = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
+        // stderr goes to a temp file, not a pipe: arboocr_demo can write
+        // well past a pipe's OS buffer (ONNXRuntime schema-registration
+        // warnings) before producing any stdout, and reading two proc_open
+        // pipes without deadlocking needs select() — which on Windows
+        // doesn't support pipe handles (stream_select() returns bogus
+        // immediate-ready results for them). A file sidesteps this on every
+        // platform: the child never blocks writing it, so stdout alone is
+        // safe to read to completion afterward.
+        $stderrFile = tempnam(sys_get_temp_dir(), 'arboocr-stderr-');
+        if ($stderrFile === false) {
+            throw new OcrException('Could not create temp file for stderr capture');
+        }
+
+        $descriptors = [1 => ['pipe', 'w'], 2 => ['file', $stderrFile, 'w']];
         $process = proc_open($argv, $descriptors, $pipes);
         if (!is_resource($process)) {
+            @unlink($stderrFile);
             throw new OcrException('Could not start process: ' . implode(' ', $this->binCommand));
         }
 
         $stdout = stream_get_contents($pipes[1]) ?: '';
-        $stderr = stream_get_contents($pipes[2]) ?: '';
         fclose($pipes[1]);
-        fclose($pipes[2]);
         $exitCode = proc_close($process);
+        $stderr = (string) file_get_contents($stderrFile);
+        @unlink($stderrFile);
 
         if ($exitCode !== 0) {
             throw new OcrException(

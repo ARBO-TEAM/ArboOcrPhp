@@ -16,6 +16,12 @@ if (in_array('--garbage', $args, true)) {
     exit(0);
 }
 
+if (in_array('--noisy-stderr', $args, true)) {
+    // Past a pipe's OS buffer (~64KB), written before any stdout — the real
+    // arboocr_demo does this via ONNXRuntime schema-registration warnings.
+    fwrite(STDERR, str_repeat("noise\n", 20000));
+}
+
 $imageIdx = array_search('--image', $args, true);
 $image = $imageIdx !== false ? ($args[$imageIdx + 1] ?? '') : '';
 
