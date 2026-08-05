@@ -10,14 +10,47 @@ composer require arbo/ocr-php
 ```
 
 On install, a Composer hook downloads the matching arboOCR release binary
-(Windows or Linux, auto-detected) into `bin/<platform>/`. If the auto-download
-fails (offline install, unsupported OS), download a release manually from
-the [arboOCR releases page](https://github.com/wafik/ArboOCR/releases) and
-pass `binPath` explicitly (see below).
+(Windows or Linux, auto-detected) into `bin/<platform>/`. As of
+[`v0.1.0-php1`](https://github.com/wafik/ArboOCR/releases/tag/v0.1.0-php1)
+(published), this auto-download is live and verified working end to end —
+no manual binary step needed. If it fails anyway (offline install,
+unsupported OS), download a release manually from the
+[arboOCR releases page](https://github.com/wafik/ArboOCR/releases) and pass
+`binPath` explicitly (see below).
 
 You also need the OCR models — arboOCR does not bundle them. See
-[arboOCR's Models section](https://github.com/wafik/ArboOCR#models) for
-download instructions, then point `modelsDir` at the folder.
+[Models](#models) below for exactly which files each `modelType` needs and
+where to get them.
+
+## Models
+
+arboOCR doesn't bundle OCR models — you point `modelsDir` at a folder of
+PP-OCRv6 ONNX files. Only the recognizer has size variants; the detector is
+always one file regardless of `modelType`:
+
+| File | Needed for | Varies by `modelType`? |
+|---|---|---|
+| `PP-OCRv6_det.onnx` | detection | no — always this one file |
+| `PP-OCRv6_rec_tiny.onnx` + `PP-OCRv6_rec_tiny_dict.txt` | `modelType: 'tiny'` | yes |
+| `PP-OCRv6_rec_small.onnx` + `PP-OCRv6_rec_small_dict.txt` | `modelType: 'small'` (default) | yes |
+| `PP-OCRv6_rec_medium.onnx` + `PP-OCRv6_rec_medium_dict.txt` | `modelType: 'medium'` | yes |
+| `PP-OCRv6_cls.onnx` | angle classification, only if `useAngleCls` | no |
+
+You only need the recognizer size(s) you'll actually use — e.g. for
+`modelType: 'small'` alone, `modelsDir` just needs `PP-OCRv6_det.onnx` +
+`PP-OCRv6_rec_small.onnx` + `PP-OCRv6_rec_small_dict.txt`. Switching sizes
+later is just changing `modelType`; `modelsDir` can hold all three sizes
+side by side if you want to switch freely.
+
+**Getting the files** — arboOCR doesn't host default download URLs (see its
+own [Models section](https://github.com/wafik/ArboOCR#models)), so pick
+whichever applies:
+- Already have a Python `rapidocr` install? Copy its `models/` directory
+  over, renaming files to match the layout above.
+- Have your own PP-OCRv6 ONNX export? Place/rename the files as above.
+- A local arboOCR checkout's `models/` directory already has the detector,
+  classifier, and all three recognizer sizes — handy for local dev (see the
+  tiny-model example below).
 
 ## Usage
 
