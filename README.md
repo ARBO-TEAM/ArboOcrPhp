@@ -112,6 +112,26 @@ subprocess per image with a `--json` flag, parsing the JSON result. See
 arboOCR's [`docs/superpowers/specs/2026-07-27-php-integration-design.md`](https://github.com/wafik/ArboOCR/blob/main/docs/superpowers/specs/2026-07-27-php-integration-design.md)
 for the full design.
 
+## Benchmark
+
+`arbo-ocr-php` was compared against arbo-ocr-go and arbo-ocr-rust on the
+same 5-image SROIE smoke set — all three call the identical `arboocr_demo`
+binary, so accuracy is the same across all three; this measures wrapper
+overhead only (subprocess spawn − arboocr_demo's own reported time):
+
+| Size | arbo-php | arbo-go | arbo-rust |
+|--------|----------:|---------:|-----------:|
+| tiny | 193 ms | 137 ms | 131 ms |
+| small | 231 ms | 171 ms | 172 ms |
+| medium | 303 ms | 248 ms | 249 ms |
+
+PHP's overhead is consistently ~55–65ms higher than Go/Rust — `php.exe`
+interpreter startup on top of `proc_open`, vs. a compiled binary paying
+only process-spawn cost. Same accuracy across all three; all three match
+or beat a PP-OCRv6-based Node/Bun reference implementation on this sample
+at every size. Full methodology in the "wrapper benchmark" section of the
+internal `compare/RESULTS.md` companion doc (not published in this repo).
+
 ## License
 
 Apache-2.0
