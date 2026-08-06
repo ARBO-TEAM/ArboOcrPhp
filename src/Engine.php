@@ -65,11 +65,7 @@ final class Engine
                 . "Run 'composer install' or pass 'binPath' explicitly.");
         }
 
-        $argv = [...$this->binCommand, '--image', $imagePath, '--json'];
-        foreach ($this->flagsFromOptions() as $flag => $value) {
-            $argv[] = "--{$flag}";
-            $argv[] = $value;
-        }
+        $argv = [...$this->binCommand, '--image', $imagePath, '--json', ...$this->flagsFromOptions()];
 
         // stderr goes to a temp file, not a pipe: arboocr_demo can write
         // well past a pipe's OS buffer (ONNXRuntime schema-registration
@@ -108,32 +104,41 @@ final class Engine
         return PageResult::fromJson(trim($stdout));
     }
 
-    /** @return array<string, string> */
+    /** @return list<string> */
     private function flagsFromOptions(): array
     {
-        $map = [
+        $stringMap = [
             'modelsDir' => 'models-dir',
             'ocrVersion' => 'ocr-version',
             'modelType' => 'model-type',
-            'useAngleCls' => 'angle',
-            'useCuda' => 'cuda',
-            'useTensorrt' => 'tensorrt',
-            'useFp16' => 'fp16',
-            'useClahe' => 'clahe',
             'detModelPath' => 'det-model',
             'clsModelPath' => 'cls-model',
             'recModelPath' => 'rec-model',
             'dictPath' => 'dict',
         ];
+        $boolMap = [
+            'useAngleCls' => 'angle',
+            'useCuda' => 'cuda',
+            'useTensorrt' => 'tensorrt',
+            'useFp16' => 'fp16',
+            'useClahe' => 'clahe',
+        ];
 
-        $flags = [];
-        foreach ($map as $optKey => $cliFlag) {
-            if (!array_key_exists($optKey, $this->options)) {
-                continue;
+        $argv = [];
+        foreach ($stringMap as $optKey => $cliFlag) {
+            if (array_key_exists($optKey, $this->options)) {
+                $argv[] = "--{$cliFlag}";
+                $argv[] = (string) $this->options[$optKey];
             }
-            $value = $this->options[$optKey];
-            $flags[$cliFlag] = is_bool($value) ? ($value ? 'true' : 'false') : (string) $value;
         }
-        return $flags;
+        foreach ($boolMap as $optKey => $cliFlag) {
+            if (array_key_exists($optKey, $this->options)) {
+                // cxxopts only binds a bool flag's value via "=" — a bare
+                // "--flag" followed by a separate "true"/"false" token
+                // leaves the flag implicitly true and the value ignored.
+                $argv[] = "--{$cliFlag}=" . ($this->options[$optKey] ? 'true' : 'false');
+            }
+        }
+        return $argv;
     }
 }

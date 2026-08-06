@@ -30,6 +30,38 @@ final class EngineTest extends TestCase
         self::assertSame(1.0, $result->lines[0]->polygon[0]['x']);
     }
 
+    /**
+     * Regression test: cxxopts binds a bool flag's value only via "=" — a
+     * bare "--angle" followed by a separate "true"/"false" token leaves the
+     * flag implicitly true and the value ignored (confirmed against the
+     * real arboocr_demo binary). flagsFromOptions() must always emit bool
+     * options as a single "--flag=value" token.
+     */
+    public function testBoolFlagsUseSingleTokenForm(): void
+    {
+        $engine = new Engine([
+            'binPath' => $this->fakeBin(),
+            'useAngleCls' => false,
+            'useCuda' => true,
+            'useTensorrt' => false,
+            'useFp16' => false,
+            'useClahe' => true,
+        ]);
+
+        $method = new \ReflectionMethod(Engine::class, 'flagsFromOptions');
+        $method->setAccessible(true);
+        $flags = $method->invoke($engine);
+
+        self::assertContains('--angle=false', $flags);
+        self::assertContains('--cuda=true', $flags);
+        self::assertContains('--tensorrt=false', $flags);
+        self::assertContains('--fp16=false', $flags);
+        self::assertContains('--clahe=true', $flags);
+        foreach (['--angle', '--cuda', '--tensorrt', '--fp16', '--clahe'] as $bareFlag) {
+            self::assertNotContains($bareFlag, $flags, "{$bareFlag} must not appear as a bare token");
+        }
+    }
+
     public function testRecognizeThrowsOnNonZeroExit(): void
     {
         $this->expectException(OcrException::class);
