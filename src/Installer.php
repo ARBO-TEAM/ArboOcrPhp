@@ -82,30 +82,35 @@ final class Installer
             throw new \RuntimeException('Could not create temp file for download');
         }
 
+        // PharData/ZipArchive detect archive format from the file extension,
+        // but tempnam() never produces one — rename to match before use.
+        $isZip = str_ends_with($assetName, '.zip');
+        $downloadFile = $tmpFile . ($isZip ? '.zip' : '.tar.gz');
+        rename($tmpFile, $downloadFile);
+
         $ctx = stream_context_create(['http' => ['follow_location' => 1, 'timeout' => 120]]);
         $data = @file_get_contents($url, false, $ctx);
         if ($data === false) {
-            @unlink($tmpFile);
+            @unlink($downloadFile);
             throw new \RuntimeException("Download failed: {$url}");
         }
-        file_put_contents($tmpFile, $data);
+        file_put_contents($downloadFile, $data);
 
-        if (str_ends_with($assetName, '.zip')) {
+        if ($isZip) {
             $zip = new \ZipArchive();
-            if ($zip->open($tmpFile) !== true) {
-                @unlink($tmpFile);
+            if ($zip->open($downloadFile) !== true) {
+                @unlink($downloadFile);
                 throw new \RuntimeException("Could not open downloaded zip: {$assetName}");
             }
             $zip->extractTo($targetDir);
             $zip->close();
-            self::flattenSingleSubdir($targetDir);
         } else {
-            $phar = new \PharData($tmpFile);
+            $phar = new \PharData($downloadFile);
             $phar->extractTo($targetDir, overwrite: true);
-            self::flattenSingleSubdir($targetDir);
         }
+        self::flattenSingleSubdir($targetDir);
 
-        @unlink($tmpFile);
+        @unlink($downloadFile);
     }
 
     /**
