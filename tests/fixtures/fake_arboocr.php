@@ -25,13 +25,23 @@ if (in_array('--noisy-stderr', $args, true)) {
 $imageIdx = array_search('--image', $args, true);
 $image = $imageIdx !== false ? ($args[$imageIdx + 1] ?? '') : '';
 
+$line = [
+    'text' => 'hello', 'score' => 0.9, 'detScore' => 0.8,
+    'polygon' => [['x' => 1.0, 'y' => 2.0]],
+];
+
+// arboOCR >= v0.2.0: --word-boxes adds a per-line `words` array.
+if (in_array('--word-boxes=true', $args, true)) {
+    $line['words'] = [
+        ['text' => 'hel', 'score' => 0.95, 'polygon' => [['x' => 1.0, 'y' => 2.0]]],
+        ['text' => 'lo', 'score' => 0.85, 'polygon' => [['x' => 3.0, 'y' => 2.0]]],
+    ];
+}
+
 echo json_encode([
     'backend' => 'cpu',
     'image' => basename($image),
     'elapsedMs' => 12.5,
-    'lines' => [
-        ['text' => 'hello', 'score' => 0.9, 'detScore' => 0.8,
-         'polygon' => [['x' => 1.0, 'y' => 2.0]]],
-    ],
+    'lines' => [$line],
 ], JSON_PRESERVE_ZERO_FRACTION) . "\n";
 exit(0);
