@@ -8,13 +8,22 @@ namespace Arbo\Ocr;
  * Composer post-install/post-update hook. Downloads the arboOCR release
  * binary matching this package's pinned version (composer.json
  * extra.arboocr-version) for the host OS, and extracts it to bin/<platform>/
- * next to this file. Never fails composer install/update on error — arboOCR
+ * next to this file. Re-downloads whenever the pin changes — the installed
+ * tag is recorded in a marker file alongside the binary, see needsInstall().
+ * Never fails composer install/update on error — arboOCR
  * still works if the caller points Engine at a manually-downloaded binary
  * via the `binPath` option.
  */
 final class Installer
 {
     private const REPO = 'wafik/ArboOCR';
+
+    /**
+     * Name of the file written inside bin/<platform>/ recording which
+     * release tag the binary sitting next to it was extracted from.
+     * Dot-prefixed so it never collides with an archive member.
+     */
+    private const VERSION_MARKER = '.arboocr-version';
 
     public static function run(): void
     {
@@ -32,8 +41,8 @@ final class Installer
             $targetDir = __DIR__ . '/../bin/' . $platform;
             $binName = $platform === 'windows-x64' ? 'arboocr_demo.exe' : 'arboocr_demo';
 
-            if (is_file($targetDir . '/' . $binName)) {
-                return; // already installed
+            if (!self::needsInstall($targetDir, $binName, $version)) {
+                return; // the pinned version is already installed
             }
 
             $asset = $platform === 'windows-x64' ? 'arboocr-windows-x64.zip' : 'arboocr-linux-x64.tar.gz';
@@ -43,6 +52,10 @@ final class Installer
             if ($platform === 'linux-x64') {
                 @chmod($targetDir . '/' . $binName, 0755);
             }
+            // Only once the new binary is actually on disk — a marker written
+            // any earlier would claim a version that isn't there, and the next
+            // run would trust it and skip the download.
+            self::writeVersionMarker($targetDir, $version);
             fwrite(STDOUT, "[arbo-ocr-php] Installed arboocr_demo ({$platform}, {$version}) to {$targetDir}\n");
         } catch (\LogicException $e) {
             // Misconfiguration (see pinnedVersion()), not a transient failure:
@@ -105,6 +118,66 @@ final class Installer
         return $version;
     }
 
+    /**
+     * Whether bin/<platform>/ has to be (re)populated for $version.
+     *
+     * DO NOT reduce this back to "is the binary there?" — that was the bug.
+     * run() used to return early on is_file($binary), which made bumping
+     * extra.arboocr-version in composer.json a silent no-op for everyone who
+     * already had a binary: composer reported success, the previous release's
+     * executable stayed exactly where it was, and the wrapper carried on
+     * driving a CLI contract it no longer matched. Nothing anywhere reported
+     * a problem; the only way to get the new build was to delete
+     * bin/<platform>/ by hand, which nobody knew to do. arbo-ocr-go and
+     * arbo-ocr-rust shipped the identical bug and fixed it the same way.
+     *
+     * So the question is "is the *pinned* version installed?", answered from
+     * a marker written next to the binary at install time. A marker that is
+     * missing, unreadable or empty counts as a mismatch and triggers a fresh
+     * download: an install made before the marker existed is of unknown
+     * provenance, and assuming such an install is current is precisely the
+     * failure this replaced. Re-downloading a binary that turns out to have
+     * been fine costs one archive; skipping one that wasn't costs silent
+     * wrong behaviour.
+     */
+    private static function needsInstall(string $targetDir, string $binName, string $version): bool
+    {
+        if (!is_file($targetDir . '/' . $binName)) {
+            return true;
+        }
+
+        return self::installedVersion($targetDir) !== $version;
+    }
+
+    /**
+     * The release tag recorded in bin/<platform>/.arboocr-version, or null
+     * when there is no readable, non-empty marker — which is how a legacy
+     * install reports "unknown version". Null never equals a pinned tag
+     * (pinnedVersion() rejects the empty string), so it always reads as a
+     * mismatch downstream.
+     */
+    private static function installedVersion(string $targetDir): ?string
+    {
+        $marker = $targetDir . '/' . self::VERSION_MARKER;
+        if (!is_file($marker)) {
+            return null;
+        }
+
+        $recorded = @file_get_contents($marker);
+        if ($recorded === false) {
+            return null;
+        }
+
+        $recorded = trim($recorded);
+
+        return $recorded === '' ? null : $recorded;
+    }
+
+    private static function writeVersionMarker(string $targetDir, string $version): void
+    {
+        @file_put_contents($targetDir . '/' . self::VERSION_MARKER, $version . "\n");
+    }
+
     private static function downloadAndExtract(string $url, string $targetDir, string $assetName): void
     {
         if (!is_dir($targetDir) && !mkdir($targetDir, 0755, true) && !is_dir($targetDir)) {
@@ -142,27 +215,50 @@ final class Installer
             $phar = new \PharData($downloadFile);
             $phar->extractTo($targetDir, overwrite: true);
         }
-        self::flattenSingleSubdir($targetDir);
+        self::flattenArchiveRoot($targetDir, $assetName);
 
         @unlink($downloadFile);
     }
 
     /**
-     * The release archives contain one top-level folder (e.g.
-     * arboocr-windows-x64/...). Move its contents up into $targetDir so
-     * callers get bin/<platform>/arboocr_demo directly, not
-     * bin/<platform>/arboocr-windows-x64/arboocr_demo.
+     * The linux tar.gz wraps everything in one top-level folder
+     * (arboocr-linux-x64/...); the windows zip is already flat. Where that
+     * folder is present, move its contents up into $targetDir so callers
+     * always get bin/<platform>/arboocr_demo directly, never
+     * bin/<platform>/arboocr-linux-x64/arboocr_demo.
+     *
+     * The folder is located by name, derived from the asset filename, rather
+     * than by the old "did the extract leave exactly one entry here?" test.
+     * That test silently only worked on a clean directory, so it stopped
+     * firing the moment re-downloads became possible: unpacking over an
+     * existing install leaves the previous version's files sitting alongside
+     * the new folder, the entry count is no longer 1, and the new binary
+     * would stay stranded one level down while the stale one kept the path
+     * Engine actually looks at. That is the same silent-no-op failure
+     * needsInstall() exists to prevent, one layer further down, and it would
+     * have made the version marker assert a release that was not on disk.
      */
-    private static function flattenSingleSubdir(string $targetDir): void
+    private static function flattenArchiveRoot(string $targetDir, string $assetName): void
     {
-        $entries = array_values(array_diff(scandir($targetDir) ?: [], ['.', '..']));
-        if (count($entries) !== 1 || !is_dir($targetDir . '/' . $entries[0])) {
+        $rootName = preg_replace('/\.(zip|tar\.gz)$/', '', $assetName);
+        if ($rootName === null || $rootName === '' || !is_dir($targetDir . '/' . $rootName)) {
             return;
         }
-        $subdir = $targetDir . '/' . $entries[0];
+
+        $subdir = $targetDir . '/' . $rootName;
         foreach (array_diff(scandir($subdir) ?: [], ['.', '..']) as $item) {
-            rename($subdir . '/' . $item, $targetDir . '/' . $item);
+            $dest = $targetDir . '/' . $item;
+            // On an upgrade $dest is the previous version's file. rename()
+            // cannot be relied on to clobber across platforms, so clear the
+            // way first — by this point the replacement is already fully
+            // downloaded and extracted, so there is nothing left to lose.
+            if (is_file($dest)) {
+                @unlink($dest);
+            }
+            if (!rename($subdir . '/' . $item, $dest)) {
+                throw new \RuntimeException("Could not move {$item} into {$targetDir}");
+            }
         }
-        rmdir($subdir);
+        @rmdir($subdir);
     }
 }
