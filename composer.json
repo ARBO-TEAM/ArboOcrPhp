@@ -21,7 +21,7 @@
         }
     },
     "extra": {
-        "arboocr-version": "v0.1.0-php1"
+        "arboocr-version": "v0.2.0"
     },
     "scripts": {
         "post-install-cmd": "Arbo\\Ocr\\Installer::run",

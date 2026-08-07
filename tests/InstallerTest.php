@@ -42,4 +42,55 @@ final class InstallerTest extends TestCase
             @rmdir($targetDir);
         }
     }
+
+    /**
+     * pinnedVersion() must read the tag straight out of composer.json's
+     * extra.arboocr-version — that pin is the single source of truth for
+     * which release the Composer hook downloads.
+     */
+    public function testPinnedVersionReadsTagFromComposerJson(): void
+    {
+        $composer = json_decode((string) file_get_contents(__DIR__ . '/../composer.json'), true);
+        $expected = $composer['extra']['arboocr-version'];
+
+        self::assertIsString($expected);
+        self::assertNotSame('', $expected);
+        self::assertSame($expected, Installer::pinnedVersion());
+    }
+
+    /**
+     * Regression: pinnedVersion() used to fall back to the literal string
+     * 'latest', which built https://.../releases/download/latest/<asset> —
+     * a 404, because GitHub's latest-asset path is /releases/latest/download/
+     * (the version segment and the word "latest" swap places). Rather than
+     * fix that URL, the fallback is gone: this package's contract is a
+     * *pinned* binary, so a missing pin is a misconfiguration that must be
+     * reported, not papered over with an unpinned download.
+     */
+    public function testPinnedVersionThrowsWhenPinIsMissing(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'installer-nopin-') . '.json';
+        file_put_contents($path, json_encode(['name' => 'arbo/ocr-php', 'extra' => []]));
+
+        try {
+            $this->expectException(\LogicException::class);
+            $this->expectExceptionMessageMatches('/arboocr-version/');
+            Installer::pinnedVersion($path);
+        } finally {
+            @unlink($path);
+        }
+    }
+
+    public function testPinnedVersionThrowsWhenPinIsEmpty(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'installer-emptypin-') . '.json';
+        file_put_contents($path, json_encode(['extra' => ['arboocr-version' => '']]));
+
+        try {
+            $this->expectException(\LogicException::class);
+            Installer::pinnedVersion($path);
+        } finally {
+            @unlink($path);
+        }
+    }
 }

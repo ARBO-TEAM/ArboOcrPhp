@@ -44,6 +44,13 @@ final class Installer
                 @chmod($targetDir . '/' . $binName, 0755);
             }
             fwrite(STDOUT, "[arbo-ocr-php] Installed arboocr_demo ({$platform}, {$version}) to {$targetDir}\n");
+        } catch (\LogicException $e) {
+            // Misconfiguration (see pinnedVersion()), not a transient failure:
+            // re-running 'composer install' will not help, so don't suggest it.
+            // Still non-fatal — the Installer's contract is that it never breaks
+            // composer install/update — but loud and clearly distinct from the
+            // download-failure message below.
+            @fwrite(STDERR, "[arbo-ocr-php] Misconfigured: " . $e->getMessage() . "\n");
         } catch (\Throwable $e) {
             @fwrite(STDERR, "[arbo-ocr-php] Could not auto-download arboOCR binary: "
                 . $e->getMessage() . "\nDownload manually from "
@@ -62,13 +69,40 @@ final class Installer
         };
     }
 
-    public static function pinnedVersion(): string
+    /**
+     * The release tag this package is pinned to (composer.json
+     * extra.arboocr-version).
+     *
+     * @param ?string $composerPath Override the composer.json location —
+     *   only for tests; production callers pass nothing.
+     *
+     * @throws \LogicException if extra.arboocr-version is missing or empty.
+     *   This deliberately does NOT fall back to GitHub's "latest" release.
+     *   The whole model of this package is a *pinned* binary: Engine's flag
+     *   mapping and PageResult's JSON parsing are written against one
+     *   specific arboocr_demo CLI contract. Silently installing whatever
+     *   happens to be newest would surface a contract mismatch as a
+     *   confusing runtime error far from its cause. A missing pin is a
+     *   misconfiguration, not a transient failure — retrying can't fix it,
+     *   so say so plainly and let a human re-pin.
+     */
+    public static function pinnedVersion(?string $composerPath = null): string
     {
-        $composerJson = json_decode(
-            (string) file_get_contents(__DIR__ . '/../composer.json'),
-            true,
-        );
-        return $composerJson['extra']['arboocr-version'] ?? 'latest';
+        $composerPath ??= __DIR__ . '/../composer.json';
+        $composerJson = json_decode((string) file_get_contents($composerPath), true);
+        $version = $composerJson['extra']['arboocr-version'] ?? null;
+
+        if (!is_string($version) || $version === '') {
+            throw new \LogicException(
+                "composer.json has no 'extra.arboocr-version', so there is no way to "
+                . "tell which arboOCR release to download. Set it to a release tag "
+                . '(e.g. "v0.2.0") in ' . $composerPath . ', or download a binary '
+                . 'manually from https://github.com/' . self::REPO . '/releases and '
+                . "pass 'binPath' to Engine.",
+            );
+        }
+
+        return $version;
     }
 
     private static function downloadAndExtract(string $url, string $targetDir, string $assetName): void

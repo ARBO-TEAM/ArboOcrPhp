@@ -10,13 +10,21 @@ composer require arbo/ocr-php
 ```
 
 On install, a Composer hook downloads the matching arboOCR release binary
-(Windows or Linux, auto-detected) into `bin/<platform>/`. As of
-[`v0.1.0-php1`](https://github.com/wafik/ArboOCR/releases/tag/v0.1.0-php1)
-(published), this auto-download is live and verified working end to end —
-no manual binary step needed. If it fails anyway (offline install,
-unsupported OS), download a release manually from the
+(Windows or Linux, auto-detected) into `bin/<platform>/`. This package is
+pinned to
+[`v0.2.0`](https://github.com/wafik/ArboOCR/releases/tag/v0.2.0)
+via `extra.arboocr-version` in `composer.json`, and the auto-download is
+live and verified working end to end — no manual binary step needed. If it
+fails anyway (offline install, unsupported OS), download a release manually
+from the
 [arboOCR releases page](https://github.com/wafik/ArboOCR/releases) and pass
 `binPath` explicitly (see below).
+
+The pin is deliberate and required: `Engine`'s flag mapping and the JSON
+parsing are written against one specific `arboocr_demo` CLI contract. If
+`extra.arboocr-version` is missing, the installer reports a clear
+misconfiguration error instead of guessing at a "latest" release (it still
+won't fail your `composer install`).
 
 You also need the OCR models — arboOCR does not bundle them. See
 [Models](#models) below for exactly which files each `modelType` needs and
@@ -63,6 +71,13 @@ $engine = new Engine([
     // 'modelType' => 'small', // tiny/small/medium — default small
     // 'useAngleCls' => true,
     // 'useCuda' => true,
+
+    // arboOCR >= v0.2.0:
+    // 'minConfidence' => 0.5,     // drop lines scoring below this
+    // 'recBatchNum' => 8,         // recognizer batch size
+    // 'detLimitSideLen' => 960,   // detector input long-side limit
+    // 'wordBoxes' => true,        // also emit per-word boxes
+    // 'logLevel' => 'debug',      // arboocr_demo is silent otherwise
 ]);
 
 $result = $engine->recognize('/path/to/image.jpg');
@@ -70,12 +85,20 @@ $result = $engine->recognize('/path/to/image.jpg');
 echo $result->backend, "\n";       // cpu / cuda / tensorrt
 foreach ($result->lines as $line) {
     echo $line->text, ' (', $line->score, ")\n";
+    foreach ($line->words as $word) {   // empty unless 'wordBoxes' => true
+        echo '  ', $word['text'], "\n";
+    }
 }
 ```
 
 An empty `$result->lines` array means no text was found — not an error.
 `Engine::recognize()` throws `Arbo\Ocr\OcrException` only when the process
-itself fails to start, exits non-zero, or produces unparseable output.
+itself fails to start, exits non-zero, or produces unparseable output. The
+exception carries the exit code (`$e->exitCode` — v0.2.0 added code `2` for
+model-load / recognition failure) and whatever the binary wrote to stderr
+(`$e->stderr`). As of v0.2.0 `arboocr_demo` writes nothing to stderr unless
+you pass `logLevel`, and output on stderr is never on its own treated as a
+failure.
 
 ## Quick example (tiny model, fastest)
 

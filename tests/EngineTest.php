@@ -98,6 +98,84 @@ final class EngineTest extends TestCase
         $engine->recognize('/some/page.jpg');
     }
 
+    /**
+     * Exit code 2 (model-load / recognition failure) is new in arboOCR
+     * v0.2.0. Engine tests `$exitCode !== 0`, not `=== 1`, so any non-zero
+     * code must surface as an OcrException carrying that exact code.
+     */
+    public function testNonZeroExitCodeIsPreservedOnException(): void
+    {
+        $engine = new Engine(['binPath' => $this->fakeBin(['--fail'])]);
+
+        try {
+            $engine->recognize('/some/page.jpg');
+            self::fail('Expected OcrException');
+        } catch (OcrException $e) {
+            self::assertSame(2, $e->exitCode);
+            self::assertStringContainsString('simulated engine failure', $e->stderr);
+        }
+    }
+
+    /**
+     * v0.2.0 flags. min-confidence is a float: assert the emitted token is
+     * "0.55" and not a comma-decimal rendering under a European locale.
+     */
+    public function testV020ScalarFlagsAreEmitted(): void
+    {
+        $engine = new Engine([
+            'binPath' => $this->fakeBin(),
+            'minConfidence' => 0.55,
+            'recBatchNum' => 8,
+            'detLimitSideLen' => 960,
+            'logLevel' => 'debug',
+        ]);
+
+        $method = new \ReflectionMethod(Engine::class, 'flagsFromOptions');
+        $method->setAccessible(true);
+        $flags = $method->invoke($engine);
+
+        foreach ([
+            '--min-confidence' => '0.55',
+            '--rec-batch-num' => '8',
+            '--det-limit-side-len' => '960',
+            '--log-level' => 'debug',
+        ] as $flag => $value) {
+            $idx = array_search($flag, $flags, true);
+            self::assertNotFalse($idx, "{$flag} must be emitted");
+            self::assertSame($value, $flags[$idx + 1]);
+        }
+    }
+
+    public function testWordBoxesFlagUsesSingleTokenBoolForm(): void
+    {
+        $engine = new Engine(['binPath' => $this->fakeBin(), 'wordBoxes' => true]);
+
+        $method = new \ReflectionMethod(Engine::class, 'flagsFromOptions');
+        $method->setAccessible(true);
+        $flags = $method->invoke($engine);
+
+        self::assertContains('--word-boxes=true', $flags);
+        self::assertNotContains('--word-boxes', $flags);
+    }
+
+    public function testWordBoxesPopulatesPerLineWords(): void
+    {
+        $engine = new Engine(['binPath' => $this->fakeBin(), 'wordBoxes' => true]);
+        $result = $engine->recognize('/some/page.jpg');
+
+        self::assertCount(2, $result->lines[0]->words);
+        self::assertSame('hel', $result->lines[0]->words[0]['text']);
+    }
+
+    /** Without wordBoxes the JSON carries no `words` key — must not warn or fail. */
+    public function testWordsDefaultsToEmptyArrayWhenAbsent(): void
+    {
+        $engine = new Engine(['binPath' => $this->fakeBin()]);
+        $result = $engine->recognize('/some/page.jpg');
+
+        self::assertSame([], $result->lines[0]->words);
+    }
+
     public function testFlagsFromOptionsMapToCliFlags(): void
     {
         // Indirect check: modelsDir/useAngleCls etc. must reach argv without

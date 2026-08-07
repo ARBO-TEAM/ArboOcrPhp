@@ -30,7 +30,18 @@ final class Engine
      *   clsModelPath?: string,
      *   recModelPath?: string,
      *   dictPath?: string,
+     *   minConfidence?: float,
+     *   recBatchNum?: int,
+     *   detLimitSideLen?: int,
+     *   wordBoxes?: bool,
+     *   logLevel?: string,
      * } $options 'binPath' is normally a single executable path (string).
+     *   'minConfidence', 'recBatchNum', 'detLimitSideLen', 'wordBoxes' and
+     *   'logLevel' require arboOCR >= v0.2.0. 'wordBoxes' adds a per-line
+     *   `words` array to the JSON, surfaced as LineResult::$words.
+     *   arboocr_demo is silent on stderr unless 'logLevel' is set; captured
+     *   stderr is only ever attached to OcrException, never treated as a
+     *   failure signal on its own.
      *   An array form (e.g. [PHP_BINARY, 'script.php']) is also accepted
      *   for wrapping a non-directly-executable command — used by the test
      *   suite to invoke a fake binary through the PHP interpreter.
@@ -107,7 +118,11 @@ final class Engine
     /** @return list<string> */
     private function flagsFromOptions(): array
     {
-        $stringMap = [
+        // Scalar options, emitted as a "--flag" + "value" pair. Ints and
+        // floats are cast to string here; PHP 8's float-to-string conversion
+        // is locale-independent, so minConfidence 0.5 is always "0.5" and
+        // never "0,5" under a comma-decimal locale.
+        $scalarMap = [
             'modelsDir' => 'models-dir',
             'ocrVersion' => 'ocr-version',
             'modelType' => 'model-type',
@@ -115,6 +130,10 @@ final class Engine
             'clsModelPath' => 'cls-model',
             'recModelPath' => 'rec-model',
             'dictPath' => 'dict',
+            'minConfidence' => 'min-confidence',
+            'recBatchNum' => 'rec-batch-num',
+            'detLimitSideLen' => 'det-limit-side-len',
+            'logLevel' => 'log-level',
         ];
         $boolMap = [
             'useAngleCls' => 'angle',
@@ -122,10 +141,11 @@ final class Engine
             'useTensorrt' => 'tensorrt',
             'useFp16' => 'fp16',
             'useClahe' => 'clahe',
+            'wordBoxes' => 'word-boxes',
         ];
 
         $argv = [];
-        foreach ($stringMap as $optKey => $cliFlag) {
+        foreach ($scalarMap as $optKey => $cliFlag) {
             if (array_key_exists($optKey, $this->options)) {
                 $argv[] = "--{$cliFlag}";
                 $argv[] = (string) $this->options[$optKey];
