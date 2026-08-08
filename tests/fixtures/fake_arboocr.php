@@ -6,6 +6,24 @@
 $args = $argv;
 array_shift($args); // drop script path
 
+// --download-models is a fetch-and-exit mode with no --image to dispatch on,
+// so it gets its own branch first. It echoes the argv it was handed, which is
+// how EngineTest asserts the real subprocess invocation (the flag builder is
+// checked separately via reflection) — the real binary prints a per-file
+// status report here instead.
+//
+// --legacy-cli stands in for the currently pinned v0.2.0 binary, which has no
+// --download-models flag at all: cxxopts rejects the unknown option and exits
+// 1 with a usage error on stderr.
+if (in_array('--download-models', $args, true)) {
+    if (in_array('--legacy-cli', $args, true)) {
+        fwrite(STDERR, "Option '--download-models' does not exist\n");
+        exit(1);
+    }
+    echo implode(' ', $args), "\n";
+    exit(0);
+}
+
 if (in_array('--fail', $args, true)) {
     fwrite(STDERR, "simulated engine failure\n");
     exit(2);

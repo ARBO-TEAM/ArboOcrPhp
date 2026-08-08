@@ -35,10 +35,18 @@ final class Engine
      *   detLimitSideLen?: int,
      *   wordBoxes?: bool,
      *   logLevel?: string,
+     *   noDownload?: bool,
+     *   modelsUrl?: string,
      * } $options 'binPath' is normally a single executable path (string).
      *   'minConfidence', 'recBatchNum', 'detLimitSideLen', 'wordBoxes' and
      *   'logLevel' require arboOCR >= v0.2.0. 'wordBoxes' adds a per-line
      *   `words` array to the JSON, surfaced as LineResult::$words.
+     *   'noDownload' and 'modelsUrl' drive model auto-download and need the
+     *   arboOCR release that adds it — newer than the pinned tag, see
+     *   Installer::pinnedVersion(). Both are strictly opt-in: leave them out
+     *   (the default) and flagsFromOptions() emits nothing for them at all,
+     *   which is exactly what keeps this class working against the pinned
+     *   binary, whose parser exits 1 on an unknown option.
      *   arboocr_demo is silent on stderr unless 'logLevel' is set; captured
      *   stderr is only ever attached to OcrException, never treated as a
      *   failure signal on its own.
@@ -68,6 +76,75 @@ final class Engine
      */
     public function recognize(string $imagePath): PageResult
     {
+        $argv = [...$this->binCommand, '--image', $imagePath, '--json', ...$this->flagsFromOptions()];
+        [$stdout, $stderr, $exitCode] = $this->runBinary($argv);
+
+        if ($exitCode !== 0) {
+            throw new OcrException(
+                "arboocr_demo exited with code {$exitCode}",
+                $exitCode,
+                $stderr,
+            );
+        }
+
+        return PageResult::fromJson(trim($stdout));
+    }
+
+    /**
+     * Prefetches the models for the configured 'ocrVersion'/'modelType' into
+     * arboOCR's own model cache by running `arboocr_demo --download-models`,
+     * which downloads and exits without doing any OCR — so it takes no image.
+     * Call it from a Docker build step or at process startup so the first
+     * recognize() doesn't pay for the download mid-request.
+     *
+     * Deliberately the same shape as Installer::run() is for the binary: one
+     * blocking call, no progress reporting, idempotent — an already-cached
+     * model is a no-op. The binary's own per-file precedence still applies: an
+     * explicit 'detModelPath'/'clsModelPath'/'recModelPath'/'dictPath' is used
+     * as given and never substituted by a download, a file already sitting in
+     * 'modelsDir' wins without touching the network, and only then is the file
+     * fetched and SHA-256 verified.
+     *
+     * Requires the arboOCR release that adds model auto-download — newer than
+     * the pinned tag (see Installer::pinnedVersion()). The pinned binary has
+     * no --download-models flag and answers with a usage error and exit 1, so
+     * until that pin is bumped this only works against a newer binary supplied
+     * via the 'binPath' option.
+     *
+     * @return string The binary's per-file status report (stdout), one line
+     *   per model file.
+     *
+     * @throws OcrException if the process can't be started or exits non-zero.
+     */
+    public function ensureModels(): string
+    {
+        $argv = [...$this->binCommand, '--download-models', ...$this->flagsFromOptions()];
+        [$stdout, $stderr, $exitCode] = $this->runBinary($argv);
+
+        if ($exitCode !== 0) {
+            throw new OcrException(
+                "arboocr_demo --download-models exited with code {$exitCode}",
+                $exitCode,
+                $stderr,
+            );
+        }
+
+        return trim($stdout);
+    }
+
+    /**
+     * Runs the binary once and returns [stdout, stderr, exitCode]. Shared by
+     * recognize() and ensureModels() so both get the identical process
+     * handling — in particular the stderr-to-file trick below, which is not
+     * optional on any platform.
+     *
+     * @param list<string> $argv
+     * @return array{0: string, 1: string, 2: int}
+     *
+     * @throws OcrException if the binary is missing or the process can't start.
+     */
+    private function runBinary(array $argv): array
+    {
         // Only check is_file() for the plain-single-path form — an array
         // binCommand's first element (e.g. PHP_BINARY) is a command name
         // resolved via PATH, not necessarily a direct file path.
@@ -75,8 +152,6 @@ final class Engine
             throw new OcrException("arboocr_demo binary not found at {$this->binCommand[0]}. "
                 . "Run 'composer install' or pass 'binPath' explicitly.");
         }
-
-        $argv = [...$this->binCommand, '--image', $imagePath, '--json', ...$this->flagsFromOptions()];
 
         // stderr goes to a temp file, not a pipe: arboocr_demo can write
         // well past a pipe's OS buffer (ONNXRuntime schema-registration
@@ -104,15 +179,7 @@ final class Engine
         $stderr = (string) file_get_contents($stderrFile);
         @unlink($stderrFile);
 
-        if ($exitCode !== 0) {
-            throw new OcrException(
-                "arboocr_demo exited with code {$exitCode}",
-                $exitCode,
-                $stderr,
-            );
-        }
-
-        return PageResult::fromJson(trim($stdout));
+        return [$stdout, $stderr, $exitCode];
     }
 
     /** @return list<string> */
@@ -159,6 +226,26 @@ final class Engine
                 $argv[] = "--{$cliFlag}=" . ($this->options[$optKey] ? 'true' : 'false');
             }
         }
+
+        // Model auto-download passthroughs. These deliberately do NOT ride
+        // $scalarMap/$boolMap, which key off "was the option supplied at all":
+        // an explicit 'noDownload' => false would then emit
+        // "--no-download=false", and 'modelsUrl' => '' an empty --models-url.
+        // Both flags postdate the pinned arboOCR release entirely, and its
+        // cxxopts parser exits 1 on an unknown option — so anything short of a
+        // real opt-in has to put nothing on the argv, or every call against the
+        // pinned binary breaks, including from callers who never asked for
+        // anything to do with downloads.
+        if (!empty($this->options['noDownload'])) {
+            // Single-token "=" form, same as the bool flags above.
+            $argv[] = '--no-download=true';
+        }
+        $modelsUrl = (string) ($this->options['modelsUrl'] ?? '');
+        if ($modelsUrl !== '') {
+            $argv[] = '--models-url';
+            $argv[] = $modelsUrl;
+        }
+
         return $argv;
     }
 }
