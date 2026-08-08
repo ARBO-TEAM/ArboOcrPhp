@@ -176,6 +176,116 @@ final class EngineTest extends TestCase
         self::assertSame([], $result->lines[0]->words);
     }
 
+    /**
+     * The load-bearing test for anybody on the pinned arboOCR release.
+     * --no-download and --models-url postdate it entirely, and cxxopts exits 1
+     * with a usage error on an unknown option — so an Engine that was never
+     * told about downloads must build argv byte-for-byte identical to what it
+     * built before these options existed. Not "--no-download=false", not an
+     * empty "--models-url": nothing at all.
+     *
+     * Asserted as an exact empty array rather than just the absence of the two
+     * flags, because any future unconditional append anywhere in
+     * flagsFromOptions() breaks pinned-binary users the same way, and only an
+     * exact match catches that.
+     */
+    public function testDefaultOptionsEmitNoModelDownloadFlags(): void
+    {
+        $engine = new Engine(['binPath' => $this->fakeBin()]);
+
+        $method = new \ReflectionMethod(Engine::class, 'flagsFromOptions');
+        $method->setAccessible(true);
+
+        self::assertSame([], $method->invoke($engine));
+    }
+
+    /**
+     * Explicitly opting *out* must be indistinguishable from never mentioning
+     * them: 'noDownload' => false and 'modelsUrl' => '' are the two ways a
+     * caller lands on the default by accident (a config array built from
+     * getenv(), say), and either one leaking onto argv kills the pinned binary.
+     */
+    public function testFalseyModelDownloadOptionsEmitNoFlags(): void
+    {
+        $engine = new Engine([
+            'binPath' => $this->fakeBin(),
+            'noDownload' => false,
+            'modelsUrl' => '',
+        ]);
+
+        $method = new \ReflectionMethod(Engine::class, 'flagsFromOptions');
+        $method->setAccessible(true);
+
+        self::assertSame([], $method->invoke($engine));
+    }
+
+    public function testModelDownloadFlagsAreEmittedWhenSet(): void
+    {
+        $engine = new Engine([
+            'binPath' => $this->fakeBin(),
+            'noDownload' => true,
+            'modelsUrl' => 'https://mirror.internal/arboocr/models-v1/',
+        ]);
+
+        $method = new \ReflectionMethod(Engine::class, 'flagsFromOptions');
+        $method->setAccessible(true);
+        $flags = $method->invoke($engine);
+
+        // Single-token "=" form for the bool, same as --word-boxes: cxxopts
+        // binds a bool's value only via "=".
+        self::assertContains('--no-download=true', $flags);
+        self::assertNotContains('--no-download', $flags, '--no-download must not appear as a bare token');
+
+        $idx = array_search('--models-url', $flags, true);
+        self::assertNotFalse($idx, '--models-url must be emitted');
+        self::assertSame('https://mirror.internal/arboocr/models-v1/', $flags[$idx + 1]);
+    }
+
+    /**
+     * ensureModels() runs the binary for real, so this asserts the actual
+     * invocation and not just the flag builder: --download-models is present,
+     * the config-derived flags ride along, and no --image is passed — the
+     * binary fetches and exits without opening an image.
+     */
+    public function testEnsureModelsInvokesDownloadModelsWithoutImage(): void
+    {
+        $engine = new Engine([
+            'binPath' => $this->fakeBin(),
+            'ocrVersion' => 'PP-OCRv6',
+            'modelType' => 'small',
+            'modelsUrl' => 'https://mirror.internal/models/',
+        ]);
+
+        // The fake echoes the argv it received back on stdout.
+        $argv = $engine->ensureModels();
+
+        self::assertStringContainsString('--download-models', $argv);
+        self::assertStringContainsString('--ocr-version PP-OCRv6', $argv);
+        self::assertStringContainsString('--model-type small', $argv);
+        self::assertStringContainsString('--models-url https://mirror.internal/models/', $argv);
+        self::assertStringNotContainsString('--image', $argv);
+    }
+
+    /**
+     * Against the pinned v0.2.0 binary --download-models is an unknown option:
+     * cxxopts prints a usage error and exits 1. That must surface as a typed
+     * OcrException carrying the exit code and stderr, like every other
+     * subprocess failure — not as a silent success.
+     */
+    public function testEnsureModelsThrowsWhenBinaryPredatesTheFlag(): void
+    {
+        $engine = new Engine(['binPath' => $this->fakeBin(['--legacy-cli'])]);
+
+        try {
+            $engine->ensureModels();
+            self::fail('Expected OcrException');
+        } catch (OcrException $e) {
+            self::assertSame(1, $e->exitCode);
+            self::assertStringContainsString('--download-models', $e->getMessage());
+            self::assertStringContainsString('does not exist', $e->stderr);
+        }
+    }
+
     public function testFlagsFromOptionsMapToCliFlags(): void
     {
         // Indirect check: modelsDir/useAngleCls etc. must reach argv without

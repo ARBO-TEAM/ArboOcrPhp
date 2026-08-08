@@ -86,6 +86,19 @@ final class Installer
      * The release tag this package is pinned to (composer.json
      * extra.arboocr-version).
      *
+     * TODO: bump extra.arboocr-version in composer.json to the next arboOCR
+     * release once it ships — the one that adds model auto-download. The
+     * currently pinned v0.2.0 predates it, so the binary this downloads has no
+     * --no-download / --models-url / --download-models flags and no
+     * ARBOOCR_OFFLINE / ARBOOCR_CACHE_DIR / ARBOOCR_MODELS_URL handling; worse,
+     * its cxxopts parser exits 1 on any unknown option. Engine's 'noDownload'
+     * and 'modelsUrl' options and Engine::ensureModels() are wired up already
+     * but only do anything against a newer binary supplied via 'binPath' —
+     * which is why they emit nothing at all unless explicitly opted into.
+     * Bumping the pin is what makes them work out of the box; the README's
+     * "Automatic download" section says the same and must be re-read and
+     * de-hedged at the same time. Do not bump before that release exists.
+     *
      * @param ?string $composerPath Override the composer.json location —
      *   only for tests; production callers pass nothing.
      *
