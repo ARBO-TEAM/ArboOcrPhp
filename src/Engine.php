@@ -41,12 +41,12 @@ final class Engine
      *   'minConfidence', 'recBatchNum', 'detLimitSideLen', 'wordBoxes' and
      *   'logLevel' require arboOCR >= v0.2.0. 'wordBoxes' adds a per-line
      *   `words` array to the JSON, surfaced as LineResult::$words.
-     *   'noDownload' and 'modelsUrl' drive model auto-download and need the
-     *   arboOCR release that adds it — newer than the pinned tag, see
-     *   Installer::pinnedVersion(). Both are strictly opt-in: leave them out
+     *   'noDownload' and 'modelsUrl' drive model auto-download and require
+     *   arboOCR >= v0.3.0 — which is what the pinned tag installs, see
+     *   Installer::pinnedVersion(). Both stay strictly opt-in: leave them out
      *   (the default) and flagsFromOptions() emits nothing for them at all,
-     *   which is exactly what keeps this class working against the pinned
-     *   binary, whose parser exits 1 on an unknown option.
+     *   which is what keeps this class working when 'binPath' points at a
+     *   pre-v0.3.0 build, whose parser exits 1 on an unknown option.
      *   arboocr_demo is silent on stderr unless 'logLevel' is set; captured
      *   stderr is only ever attached to OcrException, never treated as a
      *   failure signal on its own.
@@ -105,11 +105,11 @@ final class Engine
      * 'modelsDir' wins without touching the network, and only then is the file
      * fetched and SHA-256 verified.
      *
-     * Requires the arboOCR release that adds model auto-download — newer than
-     * the pinned tag (see Installer::pinnedVersion()). The pinned binary has
-     * no --download-models flag and answers with a usage error and exit 1, so
-     * until that pin is bumped this only works against a newer binary supplied
-     * via the 'binPath' option.
+     * Requires arboOCR >= v0.3.0, the release that added model auto-download —
+     * which is the pinned tag (see Installer::pinnedVersion()), so this works
+     * against the installed binary out of the box. A pre-v0.3.0 build supplied
+     * via 'binPath' has no --download-models flag and answers with a usage
+     * error and exit 1, surfaced as an OcrException.
      *
      * @return string The binary's per-file status report (stdout), one line
      *   per model file.

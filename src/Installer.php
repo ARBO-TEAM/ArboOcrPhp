@@ -84,20 +84,12 @@ final class Installer
 
     /**
      * The release tag this package is pinned to (composer.json
-     * extra.arboocr-version).
-     *
-     * TODO: bump extra.arboocr-version in composer.json to the next arboOCR
-     * release once it ships — the one that adds model auto-download. The
-     * currently pinned v0.2.0 predates it, so the binary this downloads has no
-     * --no-download / --models-url / --download-models flags and no
-     * ARBOOCR_OFFLINE / ARBOOCR_CACHE_DIR / ARBOOCR_MODELS_URL handling; worse,
-     * its cxxopts parser exits 1 on any unknown option. Engine's 'noDownload'
-     * and 'modelsUrl' options and Engine::ensureModels() are wired up already
-     * but only do anything against a newer binary supplied via 'binPath' —
-     * which is why they emit nothing at all unless explicitly opted into.
-     * Bumping the pin is what makes them work out of the box; the README's
-     * "Automatic download" section says the same and must be re-read and
-     * de-hedged at the same time. Do not bump before that release exists.
+     * extra.arboocr-version) — currently v0.3.0, the release that added model
+     * auto-download, so Engine's 'noDownload'/'modelsUrl' options and
+     * Engine::ensureModels() work against the binary this installs, with no
+     * 'binPath' override needed. They stay strictly opt-in all the same: a
+     * caller who points 'binPath' at an older build still gets no unknown
+     * flags emitted, and so no usage error.
      *
      * @param ?string $composerPath Override the composer.json location —
      *   only for tests; production callers pass nothing.
@@ -122,7 +114,7 @@ final class Installer
             throw new \LogicException(
                 "composer.json has no 'extra.arboocr-version', so there is no way to "
                 . "tell which arboOCR release to download. Set it to a release tag "
-                . '(e.g. "v0.2.0") in ' . $composerPath . ', or download a binary '
+                . '(e.g. "v0.3.0") in ' . $composerPath . ', or download a binary '
                 . 'manually from https://github.com/' . self::REPO . '/releases and '
                 . "pass 'binPath' to Engine.",
             );

@@ -12,9 +12,11 @@ array_shift($args); // drop script path
 // checked separately via reflection) — the real binary prints a per-file
 // status report here instead.
 //
-// --legacy-cli stands in for the currently pinned v0.2.0 binary, which has no
+// --legacy-cli stands in for a pre-v0.3.0 binary, which has no
 // --download-models flag at all: cxxopts rejects the unknown option and exits
-// 1 with a usage error on stderr.
+// 1 with a usage error on stderr. The pin is v0.3.0 now, so this is no longer
+// the default binary — it is the one a caller gets by overriding 'binPath'
+// with an older build, which must still fail loudly rather than silently.
 if (in_array('--download-models', $args, true)) {
     if (in_array('--legacy-cli', $args, true)) {
         fwrite(STDERR, "Option '--download-models' does not exist\n");
