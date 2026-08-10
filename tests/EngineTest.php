@@ -267,10 +267,12 @@ final class EngineTest extends TestCase
     }
 
     /**
-     * Against the pinned v0.2.0 binary --download-models is an unknown option:
-     * cxxopts prints a usage error and exits 1. That must surface as a typed
-     * OcrException carrying the exit code and stderr, like every other
-     * subprocess failure — not as a silent success.
+     * The pin is v0.3.0, so --download-models exists in the binary this
+     * package installs. It does not exist in anything older, and 'binPath'
+     * lets a caller point at exactly that: cxxopts then prints a usage error
+     * and exits 1. That must surface as a typed OcrException carrying the exit
+     * code and stderr, like every other subprocess failure — not as a silent
+     * success that leaves the caller believing models were prefetched.
      */
     public function testEnsureModelsThrowsWhenBinaryPredatesTheFlag(): void
     {

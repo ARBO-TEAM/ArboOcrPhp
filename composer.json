@@ -21,8 +21,7 @@
         }
     },
     "extra": {
-        "arboocr-version": "v0.2.0",
-        "arboocr-version-todo": "TODO: bump arboocr-version to the next arboOCR release once it ships — the one adding model auto-download. v0.2.0 predates it: no --no-download / --models-url / --download-models flags, no ARBOOCR_OFFLINE / ARBOOCR_CACHE_DIR / ARBOOCR_MODELS_URL handling, and its parser exits 1 on an unknown option. Engine's 'noDownload'/'modelsUrl' options and Engine::ensureModels() are already wired up but only work against a newer binary passed via 'binPath'. See Installer::pinnedVersion() and the README's Automatic download section. (JSON takes no comments, hence this key; nothing reads it.)"
+        "arboocr-version": "v0.3.0"
     },
     "scripts": {
         "post-install-cmd": "Arbo\\Ocr\\Installer::run",

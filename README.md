@@ -12,12 +12,11 @@ composer require arbo/ocr-php
 On install, a Composer hook downloads the matching arboOCR release binary
 (Windows or Linux, auto-detected) into `bin/<platform>/`. This package is
 pinned to
-[`v0.2.0`](https://github.com/wafik/ArboOCR/releases/tag/v0.2.0)
+[`v0.3.0`](https://github.com/wafik/ArboOCR/releases/tag/v0.3.0)
 via `extra.arboocr-version` in `composer.json`, and this *binary*
 auto-download is live and verified working end to end — no manual binary step
-needed. (Model files are a separate matter — see [Models](#models).) If it
-fails anyway (offline install, unsupported OS), download a release manually
-from the
+needed. If it fails anyway (offline install, unsupported OS), download a
+release manually from the
 [arboOCR releases page](https://github.com/wafik/ArboOCR/releases) and pass
 `binPath` explicitly (see below).
 
@@ -27,17 +26,20 @@ parsing are written against one specific `arboocr_demo` CLI contract. If
 misconfiguration error instead of guessing at a "latest" release (it still
 won't fail your `composer install`).
 
-You also need the OCR models — arboOCR does not bundle them, and with the
-pinned binary getting them is still your job. See [Models](#models) below for
-exactly which files each `modelType` needs and where to get them.
+The OCR models are not bundled either, but as of the pinned `v0.3.0` binary
+they are no longer a manual step: a model that isn't already on disk is
+downloaded, SHA-256 verified and cached on first run. See [Models](#models)
+below for exactly which files each `modelType` uses, and for the ways to
+supply them yourself when you'd rather not touch the network.
 
 ## Models
 
-arboOCR doesn't bundle OCR models. With the pinned release binary you point
-`modelsDir` at a folder of PP-OCRv6 ONNX files and a missing file is an error
-— see [Automatic download](#automatic-download-needs-the-next-arboocr-release)
-below for what changes with the next arboOCR release. Only the recognizer has
-size variants; the detector is always one file regardless of `modelType`:
+arboOCR doesn't bundle OCR models, but the pinned `v0.3.0` binary fetches the
+ones it needs itself — see [Automatic download](#automatic-download) below.
+Pointing `modelsDir` at a folder of PP-OCRv6 ONNX files is now optional: it is
+how you keep a run fully offline, or pin an exact set of weights. Only the
+recognizer has size variants; the detector is always one file regardless of
+`modelType`:
 
 | File | Needed for | Varies by `modelType`? |
 |---|---|---|
@@ -47,39 +49,32 @@ size variants; the detector is always one file regardless of `modelType`:
 | `PP-OCRv6_rec_medium.onnx` + `PP-OCRv6_rec_medium_dict.txt` | `modelType: 'medium'` | yes |
 | `PP-OCRv6_cls.onnx` | angle classification, only if `useAngleCls` | no |
 
-You only need the recognizer size(s) you'll actually use — e.g. for
-`modelType: 'small'` alone, `modelsDir` just needs `PP-OCRv6_det.onnx` +
+Only the recognizer size(s) you actually use get fetched — e.g. for
+`modelType: 'small'` alone that's `PP-OCRv6_det.onnx` +
 `PP-OCRv6_rec_small.onnx` + `PP-OCRv6_rec_small_dict.txt`. Switching sizes
-later is just changing `modelType`; `modelsDir` can hold all three sizes
-side by side if you want to switch freely.
+later is just changing `modelType`, which pulls that size on next use; a
+`modelsDir` can hold all three sizes side by side if you want to switch
+freely with no network at all.
 
-**Getting the files** — the pinned `v0.2.0` binary has no built-in model
-download URLs (see arboOCR's own
-[Models section](https://github.com/wafik/ArboOCR#models)), so pick whichever
-applies:
+**Supplying the files yourself** — worth doing when you want a run that
+provably never reaches the network, or a build baked with exact weights.
+A file already present in `modelsDir` always wins over a download, so any of
+these is enough:
 - Already have a Python `rapidocr` install? Copy its `models/` directory
   over, renaming files to match the layout above.
 - Have your own PP-OCRv6 ONNX export? Place/rename the files as above.
 - A local arboOCR checkout's `models/` directory already has the detector,
   classifier, and all three recognizer sizes — handy for local dev (see the
   tiny-model example below).
+- Prefetch into the cache ahead of time with `Engine::ensureModels()` (below)
+  — a Docker build step, say — so runtime never downloads anything.
 
-### Automatic download (needs the next arboOCR release)
+### Automatic download
 
-> **Not live yet — read before wiring this in.** `composer.json` pins
-> `extra.arboocr-version` to
-> [`v0.2.0`](https://github.com/wafik/ArboOCR/releases/tag/v0.2.0), which
-> predates model auto-download. Install this package today and models are
-> still entirely your job: `modelsDir` is required and a missing file is an
-> error. The options and `Engine::ensureModels()` below exist and are wired
-> up, but they only do anything against a newer binary you supply yourself via
-> `binPath`. When the arboOCR release carrying the feature ships, the pinned
-> tag bumps and this starts working out of the box with no code change on your
-> side.
-
-The next arboOCR release teaches the binary to fetch missing models itself and
-verify them by SHA-256, which makes `modelsDir` optional. Its precedence, per
-file:
+The pinned `v0.3.0` binary fetches any model it's missing and verifies it by
+SHA-256 before use, which is what makes `modelsDir` optional. Files come from
+`https://github.com/ARBO-TEAM/arbo-ocr-models/releases/download/models-v1/`
+unless you point it elsewhere. Its precedence, per file:
 
 1. An explicit model path (`detModelPath`, `clsModelPath`, `recModelPath`,
    `dictPath`) is used exactly as given and is never substituted by a
@@ -87,10 +82,10 @@ file:
 2. Otherwise a file already sitting in `modelsDir` wins — zero network.
 3. Only then is the file downloaded into the model cache and verified.
 
-Two `Engine` options drive it. Both are strictly opt-in, and that matters:
-omit them — or leave them at their falsey default — and no CLI flag is emitted
-at all, which is what keeps this package working against the pinned v0.2.0
-binary (an unknown option makes it exit 1 with a usage error):
+Two `Engine` options steer it. Both are strictly opt-in — omit them, or leave
+them at their falsey default, and no CLI flag is emitted at all, which is what
+keeps this package working when `binPath` points at a pre-`v0.3.0` build (an
+unknown option makes those exit 1 with a usage error):
 
 | Option | CLI flag | Meaning |
 |---|---|---|
@@ -105,7 +100,6 @@ download — useful in a Docker build step or at process startup:
 use Arbo\Ocr\Engine;
 
 $engine = new Engine([
-    'binPath' => '/path/to/newer/arboocr_demo', // until the pinned tag is bumped
     'modelType' => 'small',
 ]);
 
@@ -116,15 +110,15 @@ It runs `arboocr_demo --download-models`, which downloads and exits without
 doing any OCR, and returns the binary's per-file status report. Deliberately
 the same shape as the Composer install hook is for the binary: one blocking
 call, no progress reporting, idempotent — an already-cached model is a no-op.
-Against the pinned v0.2.0 binary it throws an `Arbo\Ocr\OcrException` carrying
-that binary's usage error (`$e->exitCode === 1`), since the flag doesn't exist
-there yet.
+If you override `binPath` with a pre-`v0.3.0` build it throws an
+`Arbo\Ocr\OcrException` carrying that binary's usage error
+(`$e->exitCode === 1`), since the flag doesn't exist there.
 
 ### Environment variables
 
 `recognize()` and `ensureModels()` run `arboocr_demo` as a child process, so
-it inherits the parent's environment. These need no option — and, like the
-options above, need the arboOCR release that adds auto-download:
+it inherits the parent's environment. These need no option, and — like the
+options above — need arboOCR >= `v0.3.0`, which is the pinned tag:
 
 | Variable | Effect |
 |---|---|
@@ -155,7 +149,7 @@ only, matching the published release assets.
 use Arbo\Ocr\Engine;
 
 $engine = new Engine([
-    'modelsDir' => '/path/to/models',
+    // 'modelsDir' => '/path/to/models', // optional — missing models are fetched
     // 'binPath' => '/custom/path/to/arboocr_demo', // optional override
     // 'modelType' => 'small', // tiny/small/medium — default small
     // 'useAngleCls' => true,
@@ -168,7 +162,7 @@ $engine = new Engine([
     // 'wordBoxes' => true,        // also emit per-word boxes
     // 'logLevel' => 'debug',      // arboocr_demo is silent otherwise
 
-    // Needs the next arboOCR release — see "Automatic download" above:
+    // arboOCR >= v0.3.0 — see "Automatic download" above:
     // 'noDownload' => true,                            // fail rather than fetch
     // 'modelsUrl' => 'https://mirror.internal/models/', // fetch from an internal mirror
 ]);
@@ -193,17 +187,29 @@ model-load / recognition failure) and whatever the binary wrote to stderr
 you pass `logLevel`, and output on stderr is never on its own treated as a
 failure.
 
+### GPU backends
+
+`useCuda` / `useTensorrt` request a GPU execution provider; `$result->backend`
+reports which one actually ran, so a silent fall back to `cpu` is visible.
+These need `v0.3.0` or newer to work from a release archive at all: every
+release before it shipped without the `onnxruntime_providers_shared` library,
+so the CUDA and TensorRT providers had nothing to load and the binary fell
+back to CPU no matter what you passed. `v0.3.0` ships that library, and since
+it is the pinned tag, the Composer hook installs it alongside the binary. You
+still need a matching CUDA/TensorRT runtime on the host.
+
 ## Quick example (tiny model, fastest)
 
 For a fast local smoke test, use `modelType: 'tiny'` — the smallest/fastest
-PP-OCRv6 recognizer. If you have an arboOCR checkout handy, its `models/`
-folder already contains the tiny det/rec/cls ONNX files (no extra download):
+PP-OCRv6 recognizer. Leave `modelsDir` out and the tiny det/rec/cls files are
+fetched and cached on first run; point it at a local arboOCR checkout's
+`models/` folder instead and nothing is downloaded at all:
 
 ```php
 use Arbo\Ocr\Engine;
 
 $engine = new Engine([
-    'modelsDir' => '/path/to/arboOCR/models', // e.g. a local arboOCR checkout's models/ dir
+    // 'modelsDir' => '/path/to/arboOCR/models', // optional: skip the download
     'modelType' => 'tiny',
 ]);
 
@@ -223,8 +229,10 @@ recognition.
 
 This package never builds or vendors arboOCR's C++ source. It downloads a
 prebuilt, self-contained binary (binary + required shared libraries, no
-source, no ONNX models) from arboOCR's GitHub Releases, and calls it as a
-subprocess per image with a `--json` flag, parsing the JSON result. See
+source) from arboOCR's GitHub Releases, and calls it as a subprocess per image
+with a `--json` flag, parsing the JSON result. The ONNX models are not in that
+archive — the binary fetches and caches those itself on first use, separately
+from this package's `bin/<platform>/` directory. See
 arboOCR's [`docs/superpowers/specs/2026-07-27-php-integration-design.md`](https://github.com/wafik/ArboOCR/blob/main/docs/superpowers/specs/2026-07-27-php-integration-design.md)
 for the full design.
 
