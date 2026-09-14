@@ -12,7 +12,7 @@ composer require arbo/ocr-php
 On install, a Composer hook downloads the matching arboOCR release binary
 (Windows or Linux, auto-detected) into `bin/<platform>/`. This package is
 pinned to
-[`v0.3.0`](https://github.com/wafik/ArboOCR/releases/tag/v0.3.0)
+[`v0.4.0`](https://github.com/wafik/ArboOCR/releases/tag/v0.4.0)
 via `extra.arboocr-version` in `composer.json`, and this *binary*
 auto-download is live and verified working end to end — no manual binary step
 needed. If it fails anyway (offline install, unsupported OS), download a
@@ -26,7 +26,7 @@ parsing are written against one specific `arboocr_demo` CLI contract. If
 misconfiguration error instead of guessing at a "latest" release (it still
 won't fail your `composer install`).
 
-The OCR models are not bundled either, but as of the pinned `v0.3.0` binary
+The OCR models are not bundled either, but as of the pinned `v0.4.0` binary
 they are no longer a manual step: a model that isn't already on disk is
 downloaded, SHA-256 verified and cached on first run. See [Models](#models)
 below for exactly which files each `modelType` uses, and for the ways to
@@ -34,7 +34,7 @@ supply them yourself when you'd rather not touch the network.
 
 ## Models
 
-arboOCR doesn't bundle OCR models, but the pinned `v0.3.0` binary fetches the
+arboOCR doesn't bundle OCR models, but the pinned `v0.4.0` binary fetches the
 ones it needs itself — see [Automatic download](#automatic-download) below.
 Pointing `modelsDir` at a folder of PP-OCRv6 ONNX files is now optional: it is
 how you keep a run fully offline, or pin an exact set of weights. Only the
@@ -71,7 +71,7 @@ these is enough:
 
 ### Automatic download
 
-The pinned `v0.3.0` binary fetches any model it's missing and verifies it by
+The pinned `v0.4.0` binary fetches any model it's missing and verifies it by
 SHA-256 before use, which is what makes `modelsDir` optional. Files come from
 `https://github.com/ARBO-TEAM/arbo-ocr-models/releases/download/models-v1/`
 unless you point it elsewhere. Its precedence, per file:
@@ -118,7 +118,7 @@ If you override `binPath` with a pre-`v0.3.0` build it throws an
 
 `recognize()` and `ensureModels()` run `arboocr_demo` as a child process, so
 it inherits the parent's environment. These need no option, and — like the
-options above — need arboOCR >= `v0.3.0`, which is the pinned tag:
+options above — need arboOCR >= `v0.3.0`, which the pinned tag satisfies:
 
 | Variable | Effect |
 |---|---|
