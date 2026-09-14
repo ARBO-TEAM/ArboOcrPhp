@@ -68,10 +68,10 @@ final class InstallerTest extends TestCase
      */
     public function testNeedsInstallIsFalseWhenPinnedVersionIsAlreadyInstalled(): void
     {
-        $dir = self::makeFakeInstall('v0.2.0');
+        $dir = self::makeFakeInstall('v0.3.0');
 
         try {
-            self::assertFalse(self::needsInstall($dir, 'v0.2.0'));
+            self::assertFalse(self::needsInstall($dir, 'v0.3.0'));
         } finally {
             self::removeDir($dir);
         }
@@ -89,7 +89,7 @@ final class InstallerTest extends TestCase
         $dir = self::makeFakeInstall('v0.1.0-php1');
 
         try {
-            self::assertTrue(self::needsInstall($dir, 'v0.2.0'));
+            self::assertTrue(self::needsInstall($dir, 'v0.3.0'));
         } finally {
             self::removeDir($dir);
         }
@@ -105,7 +105,7 @@ final class InstallerTest extends TestCase
         $dir = self::makeFakeInstall(null);
 
         try {
-            self::assertTrue(self::needsInstall($dir, 'v0.2.0'));
+            self::assertTrue(self::needsInstall($dir, 'v0.3.0'));
         } finally {
             self::removeDir($dir);
         }
@@ -121,7 +121,7 @@ final class InstallerTest extends TestCase
         $dir = self::makeFakeInstall('');
 
         try {
-            self::assertTrue(self::needsInstall($dir, 'v0.2.0'));
+            self::assertTrue(self::needsInstall($dir, 'v0.3.0'));
         } finally {
             self::removeDir($dir);
         }
@@ -129,11 +129,11 @@ final class InstallerTest extends TestCase
 
     public function testNeedsInstallIsTrueWhenBinaryIsMissing(): void
     {
-        $dir = self::makeFakeInstall('v0.2.0');
+        $dir = self::makeFakeInstall('v0.3.0');
         @unlink($dir . '/arboocr_demo');
 
         try {
-            self::assertTrue(self::needsInstall($dir, 'v0.2.0'));
+            self::assertTrue(self::needsInstall($dir, 'v0.3.0'));
         } finally {
             self::removeDir($dir);
         }
