@@ -25,6 +25,41 @@ if (in_array('--noisy-stderr', $args, true)) {
 $imageIdx = array_search('--image', $args, true);
 $image = $imageIdx !== false ? ($args[$imageIdx + 1] ?? '') : '';
 
+// --images-from is batch mode: one process over a newline-delimited list file,
+// one JSON array on stdout in list order. Each path is echoed back as its
+// line's text so the tests can assert positional matching.
+if (($listIdx = array_search('--images-from', $args, true)) !== false) {
+    // What a bad flag actually does: exit 1 with no JSON on stdout, which the
+    // engine must not confuse with the ordinary "a page came back empty" exit
+    // 1 that still carries the array.
+    if (in_array('--batch-usage-error', $args, true)) {
+        fwrite(STDERR, "Option '--images-from' does not exist\n");
+        exit(1);
+    }
+
+    $paths = [];
+    foreach (explode("\n", (string) file_get_contents($args[$listIdx + 1] ?? '')) as $line) {
+        $line = trim($line);
+        if ($line !== '' && !str_starts_with($line, '#')) {
+            $paths[] = $line;
+        }
+    }
+    if (in_array('--batch-short', $args, true) && $paths !== []) {
+        array_pop($paths);
+    }
+
+    echo json_encode(array_map(static fn (string $p) => [
+        'backend' => 'cpu',
+        'image' => basename($p),
+        'elapsedMs' => 12.5,
+        'lines' => [['text' => $p, 'score' => 0.9, 'detScore' => 0.8, 'polygon' => [['x' => 1.0, 'y' => 2.0]]]],
+    ], $paths), JSON_PRESERVE_ZERO_FRACTION) . "\n";
+
+    // A batch exits 1 when any image came back empty — an ordinary outcome
+    // that still carries the JSON the caller asked for.
+    exit(in_array('--batch-exit1', $args, true) ? 1 : 0);
+}
+
 $line = [
     'text' => 'hello', 'score' => 0.9, 'detScore' => 0.8,
     'polygon' => [['x' => 1.0, 'y' => 2.0]],

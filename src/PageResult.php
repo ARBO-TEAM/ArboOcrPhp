@@ -32,16 +32,25 @@ final class PageResult
             throw new OcrException('arboocr_demo --json produced unparseable output: ' . substr($json, 0, 500));
         }
 
-        $lines = array_map(
-            static fn (array $line) => LineResult::fromArray($line),
-            $data['lines'],
-        );
+        return self::fromArray($data);
+    }
 
+    /**
+     * Build from one already-decoded page object — the element shape of
+     * `--images-from`'s JSON array. Assumes the shape fromJson validates.
+     *
+     * @param array<string, mixed> $data
+     */
+    public static function fromArray(array $data): self
+    {
         return new self(
             backend: (string) ($data['backend'] ?? ''),
             image: (string) ($data['image'] ?? ''),
             elapsedMs: (float) ($data['elapsedMs'] ?? 0.0),
-            lines: $lines,
+            lines: array_map(
+                static fn (array $line) => LineResult::fromArray($line),
+                $data['lines'],
+            ),
         );
     }
 }

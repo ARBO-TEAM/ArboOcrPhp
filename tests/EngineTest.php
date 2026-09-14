@@ -38,6 +38,7 @@ final class EngineTest extends TestCase
      * options as a single "--flag=value" token.
      */
     public function testBoolFlagsUseSingleTokenForm(): void
+
     {
         $engine = new Engine([
             'binPath' => $this->fakeBin(),
@@ -189,5 +190,77 @@ final class EngineTest extends TestCase
         ]);
         $result = $engine->recognize('/some/page.jpg');
         self::assertSame('cpu', $result->backend);
+    }
+
+    public function testRecognizeBatchParsesArrayInInputOrder(): void
+    {
+        // The fake echoes each list path back as that page's line text, so
+        // input order is observable rather than assumed.
+        $engine = new Engine(['binPath' => $this->fakeBin()]);
+        $pages = $engine->recognizeBatch(['/a/one.jpg', '/b/two.jpg', '/c/three.jpg']);
+
+        self::assertCount(3, $pages);
+        self::assertSame(['/a/one.jpg', '/b/two.jpg', '/c/three.jpg'], array_map(
+            static fn ($p) => $p->lines[0]->text,
+            $pages,
+        ));
+        self::assertSame('one.jpg', $pages[0]->image);
+    }
+
+    public function testRecognizeBatchEmptyInputMakesNoProcess(): void
+    {
+        // binPath points at a non-existent file: nothing must be spawned.
+        $engine = new Engine(['binPath' => ['/nonexistent/arboocr_demo']]);
+        self::assertSame([], $engine->recognizeBatch([]));
+    }
+
+    public function testRecognizeBatchRejectsUnlistablePath(): void
+    {
+        $engine = new Engine(['binPath' => $this->fakeBin()]);
+
+        foreach ([
+            ['/a/one.jpg', ''],
+            ["/a/one.jpg", "/b/two\n.jpg"],
+            ['/a/one.jpg', '#commented.jpg'],
+        ] as $paths) {
+            try {
+                $engine->recognizeBatch($paths);
+                self::fail('expected OcrException for ' . json_encode($paths));
+            } catch (OcrException $e) {
+                self::assertStringContainsString('imagePaths[1]', $e->getMessage());
+            }
+        }
+    }
+
+    public function testRecognizeBatchToleratesExit1WithJson(): void
+    {
+        // Exit 1 because a page came back empty is an ordinary batch outcome,
+        // not a failure — the array is still on stdout.
+        $engine = new Engine(['binPath' => $this->fakeBin(['--batch-exit1'])]);
+        $pages = $engine->recognizeBatch(['/a/one.jpg', '/b/two.jpg']);
+
+        self::assertCount(2, $pages);
+    }
+
+    public function testRecognizeBatchUsageErrorIsAnException(): void
+    {
+        // Exit 1 with an empty stdout is a usage error, and must not be
+        // mistaken for the tolerated empty-page exit above.
+        $engine = new Engine(['binPath' => $this->fakeBin(['--batch-usage-error'])]);
+
+        $this->expectException(OcrException::class);
+        $this->expectExceptionMessageMatches('/exited with code 1/');
+        $engine->recognizeBatch(['/a/one.jpg']);
+    }
+
+    public function testRecognizeBatchCountMismatchIsFatal(): void
+    {
+        // Every check after this one is positional, so a short array has to
+        // fail here rather than shift text onto the wrong file.
+        $engine = new Engine(['binPath' => $this->fakeBin(['--batch-short'])]);
+
+        $this->expectException(OcrException::class);
+        $this->expectExceptionMessageMatches('/cannot match results to inputs by position/');
+        $engine->recognizeBatch(['/a/one.jpg', '/b/two.jpg']);
     }
 }
