@@ -84,7 +84,12 @@ final class Installer
 
     /**
      * The release tag this package is pinned to (composer.json
-     * extra.arboocr-version).
+     * extra.arboocr-version) — currently v0.3.0, the release that added model
+     * auto-download, so Engine's 'noDownload'/'modelsUrl' options and
+     * Engine::ensureModels() work against the binary this installs, with no
+     * 'binPath' override needed. They stay strictly opt-in all the same: a
+     * caller who points 'binPath' at an older build still gets no unknown
+     * flags emitted, and so no usage error.
      *
      * @param ?string $composerPath Override the composer.json location —
      *   only for tests; production callers pass nothing.
@@ -109,7 +114,7 @@ final class Installer
             throw new \LogicException(
                 "composer.json has no 'extra.arboocr-version', so there is no way to "
                 . "tell which arboOCR release to download. Set it to a release tag "
-                . '(e.g. "v0.2.0") in ' . $composerPath . ', or download a binary '
+                . '(e.g. "v0.3.0") in ' . $composerPath . ', or download a binary '
                 . 'manually from https://github.com/' . self::REPO . '/releases and '
                 . "pass 'binPath' to Engine.",
             );
