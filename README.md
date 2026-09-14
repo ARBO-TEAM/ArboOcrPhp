@@ -227,11 +227,14 @@ foreach ($pages as $i => $page) {
 }
 ```
 
-Over 5 SROIE receipts the saving measured 13.0% of wall time at `tiny`, 28.5%
-at `small` and 13.6% at `medium`, with identical text on every image
-(`bench_batch_go.py` in the internal `compare/` harness). That share is
-`(process start + model load) / total`, so it moves with the model size and
-the list length rather than being a fixed percentage.
+Over 5 SROIE receipts batching saved 35–44% of wall time at `tiny`, 16–29% at
+`small` and 11–17% at `medium`, with identical text on every image
+(`bench_batch_all.py` in the internal `compare/` harness). Those are ranges
+across all five wrapper languages, not point values, and deliberately so: the
+saving is not this wrapper's — it is `(process start + model load) / total`,
+which `arboocr_demo` owns, and the raw binary with no wrapper at all measures
+31% / 19% / 10%. That share moves with the model size and the list length
+rather than being a fixed percentage.
 
 Results are matched to inputs **by position**, and the count must agree —
 `arboocr_demo` reports only an image's basename, so two same-named files in
