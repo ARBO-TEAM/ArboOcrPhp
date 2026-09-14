@@ -182,6 +182,131 @@ final class Engine
         return [$stdout, $stderr, $exitCode];
     }
 
+    /**
+     * OCR many images with **one** arboocr_demo process
+     * (`--images-from <list> --json`) and return one PageResult per input, in
+     * input order.
+     *
+     * recognize() starts a fresh process per image, and the process start
+     * plus model load dominates a short page; this pays it once for the whole
+     * list instead.
+     *
+     * Results are matched to inputs **by position** because the binary
+     * reports only a basename. That is sound only while the counts agree, so a
+     * mismatch throws rather than returning a shifted list.
+     *
+     * A batch exits 1 when *any* image came back empty. That is an ordinary
+     * outcome, not a failure, and is tolerated as long as the JSON array is
+     * still on stdout — a usage error exits 1 too but leaves stdout empty, and
+     * that one throws.
+     *
+     * @param list<string> $imagePaths
+     * @return list<PageResult>
+     * @throws OcrException if the process can't be started, fails for any
+     *   reason other than the exit-1-with-JSON case above, or its stdout isn't
+     *   a JSON array of the same length as $imagePaths.
+     */
+    public function recognizeBatch(array $imagePaths): array
+    {
+        if ($imagePaths === []) {
+            return [];
+        }
+
+        if (count($this->binCommand) === 1 && !is_file($this->binCommand[0])) {
+            throw new OcrException("arboocr_demo binary not found at {$this->binCommand[0]}. "
+                . "Run 'composer install' or pass 'binPath' explicitly.");
+        }
+
+        // The list file is newline-delimited, and the binary skips blank lines
+        // and '#' lines as comments. A path in either shape would be dropped
+        // silently and shift every later result onto the wrong input, so it is
+        // rejected up front rather than mis-attributed later.
+        foreach ($imagePaths as $i => $path) {
+            if ($path === '') {
+                throw new OcrException("recognizeBatch: imagePaths[{$i}] is empty");
+            }
+            if (strpbrk($path, "\r\n") !== false) {
+                throw new OcrException("recognizeBatch: imagePaths[{$i}] contains a newline, "
+                    . "which the image list format cannot represent: {$path}");
+            }
+            if (str_starts_with(ltrim($path, " \t"), '#')) {
+                throw new OcrException("recognizeBatch: imagePaths[{$i}] starts with '#', "
+                    . "which arboocr_demo reads as a comment and would skip: {$path}");
+            }
+        }
+
+        $listFile = tempnam(sys_get_temp_dir(), 'arboocr-list-');
+        if ($listFile === false) {
+            throw new OcrException('Could not create temp file for the image list');
+        }
+        if (file_put_contents($listFile, implode("\n", $imagePaths) . "\n") === false) {
+            @unlink($listFile);
+            throw new OcrException('Could not write the image list');
+        }
+
+        $argv = [...$this->binCommand, '--images-from', $listFile, '--json', ...$this->flagsFromOptions()];
+
+        // Same stderr-to-a-file rationale as recognize(): a full stderr pipe
+        // would block the child while we read stdout.
+        $stderrFile = tempnam(sys_get_temp_dir(), 'arboocr-stderr-');
+        if ($stderrFile === false) {
+            @unlink($listFile);
+            throw new OcrException('Could not create temp file for stderr capture');
+        }
+
+        $descriptors = [1 => ['pipe', 'w'], 2 => ['file', $stderrFile, 'w']];
+        $process = proc_open($argv, $descriptors, $pipes);
+        if (!is_resource($process)) {
+            @unlink($listFile);
+            @unlink($stderrFile);
+            throw new OcrException('Could not start process: ' . implode(' ', $this->binCommand));
+        }
+
+        $stdout = stream_get_contents($pipes[1]) ?: '';
+        fclose($pipes[1]);
+        $exitCode = proc_close($process);
+        $stderr = (string) file_get_contents($stderrFile);
+        @unlink($listFile);
+        @unlink($stderrFile);
+
+        $trimmed = trim($stdout);
+        if ($exitCode !== 0 && !($exitCode === 1 && str_starts_with($trimmed, '['))) {
+            throw new OcrException(
+                "arboocr_demo exited with code {$exitCode}",
+                $exitCode,
+                $stderr,
+            );
+        }
+
+        $pages = json_decode($trimmed, true);
+        if (!is_array($pages)) {
+            throw new OcrException(
+                'arboocr_demo --images-from produced unparseable output: ' . substr($trimmed, 0, 500)
+            );
+        }
+
+        // Count first: every later check is positional, so a short or long
+        // array has to fail here rather than shift text onto the wrong file.
+        if (count($pages) !== count($imagePaths)) {
+            throw new OcrException(sprintf(
+                'arboocr_demo returned %d results for %d images; cannot match results to inputs by position',
+                count($pages),
+                count($imagePaths),
+            ));
+        }
+
+        foreach ($pages as $i => $page) {
+            if (!is_array($page) || !isset($page['lines']) || !is_array($page['lines'])) {
+                throw new OcrException(
+                    "arboocr_demo --images-from element {$i} has no 'lines' array: "
+                    . substr(json_encode($page), 0, 500)
+                );
+            }
+        }
+
+        return array_map(static fn (array $page) => PageResult::fromArray($page), array_values($pages));
+    }
+
     /** @return list<string> */
     private function flagsFromOptions(): array
     {
