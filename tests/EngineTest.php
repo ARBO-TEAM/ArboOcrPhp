@@ -243,6 +243,78 @@ final class EngineTest extends TestCase
     }
 
     /**
+     * The three v0.4.0 options, set. minDetBoxArea rides the scalar map, so
+     * it is the two-token "--flag" + "value" pair; the two booleans use the
+     * single-token "=" form cxxopts requires.
+     */
+    public function testV040FlagsAreEmittedWhenSet(): void
+    {
+        $engine = new Engine([
+            'binPath' => $this->fakeBin(),
+            'minDetBoxArea' => 20.0,
+            'spaceRecovery' => true,
+            'enableCpuMemArena' => true,
+        ]);
+
+        $method = new \ReflectionMethod(Engine::class, 'flagsFromOptions');
+        $method->setAccessible(true);
+        $flags = $method->invoke($engine);
+
+        $idx = array_search('--min-det-box-area', $flags, true);
+        self::assertNotFalse($idx, '--min-det-box-area must be emitted');
+        self::assertSame('20', $flags[$idx + 1]);
+
+        self::assertContains('--space-recovery=true', $flags);
+        self::assertContains('--enable-cpu-mem-arena=true', $flags);
+        foreach (['--space-recovery', '--enable-cpu-mem-arena'] as $bareFlag) {
+            self::assertNotContains($bareFlag, $flags, "{$bareFlag} must not appear as a bare token");
+        }
+    }
+
+    /**
+     * 0 is a real setting for minDetBoxArea — it disables the cut — so it has
+     * to reach argv. That is the whole reason it rides $scalarMap (keyed on
+     * array_key_exists) instead of a "!= 0 means unset" numeric rule.
+     */
+    public function testMinDetBoxAreaEmitsAnExplicitZero(): void
+    {
+        $method = new \ReflectionMethod(Engine::class, 'flagsFromOptions');
+        $method->setAccessible(true);
+
+        // A list of pairs, not a float-keyed map: PHP casts float array keys
+        // to int, so "12.5 => ..." would silently become 12.
+        foreach ([[0.0, '0'], [12.5, '12.5']] as [$value, $expected]) {
+            $engine = new Engine(['binPath' => $this->fakeBin(), 'minDetBoxArea' => $value]);
+            $flags = $method->invoke($engine);
+
+            $idx = array_search('--min-det-box-area', $flags, true);
+            self::assertNotFalse($idx, "--min-det-box-area must be emitted for {$value}");
+            self::assertSame($expected, $flags[$idx + 1]);
+        }
+    }
+
+    /**
+     * The two v0.4.0 booleans are opt-in only, unlike the older bools that
+     * always emit. `false` is already the binary's own default, and it is
+     * what a pre-v0.4.0 build would reject — so an explicit false has to be
+     * byte-identical to never mentioning them, exactly as the empty array
+     * asserts rather than just "the flag is absent".
+     */
+    public function testV040BoolsEmitNothingWhenFalse(): void
+    {
+        $engine = new Engine([
+            'binPath' => $this->fakeBin(),
+            'spaceRecovery' => false,
+            'enableCpuMemArena' => false,
+        ]);
+
+        $method = new \ReflectionMethod(Engine::class, 'flagsFromOptions');
+        $method->setAccessible(true);
+
+        self::assertSame([], $method->invoke($engine));
+    }
+
+    /**
      * ensureModels() runs the binary for real, so this asserts the actual
      * invocation and not just the flag builder: --download-models is present,
      * the config-derived flags ride along, and no --image is passed — the
@@ -289,8 +361,7 @@ final class EngineTest extends TestCase
         }
     }
 
-    public function testFlagsFromOptionsMapToCliFlags(): void
-    {
+    public function testFlagsFromOptionsMapToCliFlags(): void    {
         // Indirect check: modelsDir/useAngleCls etc. must reach argv without
         // erroring proc_open and must not break the fake binary's parsing
         // (it only reads --image, so any well-formed extra flags are fine).
