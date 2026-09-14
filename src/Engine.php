@@ -37,6 +37,9 @@ final class Engine
      *   logLevel?: string,
      *   noDownload?: bool,
      *   modelsUrl?: string,
+     *   minDetBoxArea?: float,
+     *   spaceRecovery?: bool,
+     *   enableCpuMemArena?: bool,
      * } $options 'binPath' is normally a single executable path (string).
      *   'minConfidence', 'recBatchNum', 'detLimitSideLen', 'wordBoxes' and
      *   'logLevel' require arboOCR >= v0.2.0. 'wordBoxes' adds a per-line
@@ -47,6 +50,16 @@ final class Engine
      *   (the default) and flagsFromOptions() emits nothing for them at all,
      *   which is what keeps this class working when 'binPath' points at a
      *   pre-v0.3.0 build, whose parser exits 1 on an unknown option.
+     *   'minDetBoxArea', 'spaceRecovery' and 'enableCpuMemArena' require
+     *   arboOCR >= v0.4.0, and are opt-in for that same reason: a build older
+     *   than v0.4.0 does not know these flags and rejects them outright.
+     *   'minDetBoxArea' is a float where 0 is a real setting (it disables the
+     *   box-area cut), so it rides $scalarMap — which keys off
+     *   array_key_exists and therefore emits an explicit 0.0 while staying
+     *   silent when the option is absent. The two booleans deliberately do
+     *   NOT ride $boolMap, which would emit "--flag=false" for an explicit
+     *   false; they emit a single "--flag=true" token only when true, and
+     *   nothing at all otherwise.
      *   arboocr_demo is silent on stderr unless 'logLevel' is set; captured
      *   stderr is only ever attached to OcrException, never treated as a
      *   failure signal on its own.
@@ -326,6 +339,10 @@ final class Engine
             'recBatchNum' => 'rec-batch-num',
             'detLimitSideLen' => 'det-limit-side-len',
             'logLevel' => 'log-level',
+            // v0.4.0. Rides this map rather than the bool one because 0 is a
+            // meaningful value (it disables the cut) and array_key_exists is
+            // what tells "passed 0.0" apart from "not passed at all".
+            'minDetBoxArea' => 'min-det-box-area',
         ];
         $boolMap = [
             'useAngleCls' => 'angle',
@@ -369,6 +386,19 @@ final class Engine
         if ($modelsUrl !== '') {
             $argv[] = '--models-url';
             $argv[] = $modelsUrl;
+        }
+
+        // The two v0.4.0 booleans, same opt-in-only shape as --no-download
+        // above and for the same reason: an older binary treats them as
+        // unknown options and exits 1. They stay out of $boolMap because that
+        // loop emits "--flag=false" whenever the key is present, and false is
+        // already the binary's own default — restating it would only break
+        // pre-v0.4.0 callers for no gain.
+        if (!empty($this->options['spaceRecovery'])) {
+            $argv[] = '--space-recovery=true';
+        }
+        if (!empty($this->options['enableCpuMemArena'])) {
+            $argv[] = '--enable-cpu-mem-arena=true';
         }
 
         return $argv;
