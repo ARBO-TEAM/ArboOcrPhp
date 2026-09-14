@@ -12,7 +12,7 @@ composer require arbo/ocr-php
 On install, a Composer hook downloads the matching arboOCR release binary
 (Windows or Linux, auto-detected) into `bin/<platform>/`. This package is
 pinned to
-[`v0.2.0`](https://github.com/wafik/ArboOCR/releases/tag/v0.2.0)
+[`v0.4.0`](https://github.com/wafik/ArboOCR/releases/tag/v0.4.0)
 via `extra.arboocr-version` in `composer.json`, and the auto-download is
 live and verified working end to end — no manual binary step needed. If it
 fails anyway (offline install, unsupported OS), download a release manually
