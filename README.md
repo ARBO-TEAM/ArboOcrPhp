@@ -165,6 +165,11 @@ $engine = new Engine([
     // arboOCR >= v0.3.0 — see "Automatic download" above:
     // 'noDownload' => true,                            // fail rather than fetch
     // 'modelsUrl' => 'https://mirror.internal/models/', // fetch from an internal mirror
+
+    // arboOCR >= v0.4.0:
+    // 'minDetBoxArea' => 20,       // drop det boxes at or below this area; 0 disables
+    // 'spaceRecovery' => true,     // recover inter-word spaces CTC decode swallows
+    // 'enableCpuMemArena' => true, // leave ORT CPU memory arena on: faster, higher RSS
 ]);
 
 $result = $engine->recognize('/path/to/image.jpg');
@@ -186,6 +191,26 @@ model-load / recognition failure) and whatever the binary wrote to stderr
 (`$e->stderr`). As of v0.2.0 `arboocr_demo` writes nothing to stderr unless
 you pass `logLevel`, and output on stderr is never on its own treated as a
 failure.
+
+### Detection and recognition tuning
+
+These three require arboOCR >= `v0.4.0`, and like the download options above
+they are strictly opt-in — each is emitted only when you actually set it, so
+`binPath` pointed at an older build never sees a flag it would reject:
+
+| Option | CLI flag | Meaning |
+|---|---|---|
+| `minDetBoxArea` (float) | `--min-det-box-area <float>` | Drop detection boxes at or below this area in detector-input pixels. `0` disables the cut; omitting the option leaves the binary's default of `20`. |
+| `spaceRecovery` (bool) | `--space-recovery=true` | Recover the inter-word spaces a greedy CTC decode swallows. Opt-in because it can also introduce spurious ones. |
+| `enableCpuMemArena` (bool) | `--enable-cpu-mem-arena=true` | Leave ONNXRuntime's CPU memory arena on: faster, at a higher resident set size. |
+
+`minDetBoxArea` is a float where `0` is a *real* setting rather than a
+stand-in for "unset", which is why it is emitted whenever the key is present
+and an explicit `0` reaches the binary as `--min-det-box-area 0`. The two
+booleans are the opposite case: `false` is already the binary's own default,
+so an explicit `false` (or omitting them) puts **nothing** on the command line
+— a pre-`v0.4.0` binary answers `--space-recovery=false` with a usage error
+and exit 1, and restating a default would buy nothing in exchange.
 
 ### Many images in one process — `recognizeBatch`
 
@@ -271,23 +296,44 @@ for the full design.
 
 ## Benchmark
 
-`arbo-ocr-php` was compared against arbo-ocr-go and arbo-ocr-rust on the
-same 5-image SROIE smoke set — all three call the identical `arboocr_demo`
-binary, so accuracy is the same across all three; this measures wrapper
-overhead only (subprocess spawn − arboocr_demo's own reported time):
+`arbo-ocr-php` was benchmarked against the other five arbo wrapper arms —
+`arbo-cpp`, `arbo-go`, `arbo-rust`, `arbo-python`, `arbo-js` — on a
+40-image SROIE sample. All six drive the **same pinned `arboocr_demo`
+v0.4.0 binary**, so accuracy is identical across the arms by construction
+(84.6 / 86.1 / 86.3% at tiny/small/medium) and the only thing left to
+compare is each wrapper's own per-call cost:
 
-| Size | arbo-php | arbo-go | arbo-rust |
-|--------|----------:|---------:|-----------:|
-| tiny | 193 ms | 137 ms | 131 ms |
-| small | 231 ms | 171 ms | 172 ms |
-| medium | 303 ms | 248 ms | 249 ms |
+| Arm | tiny | small | medium |
+|-----|-----:|------:|-------:|
+| arbo-cpp (raw binary, no wrapper) | 322 / 179 | 662 / 478 | 1825 / 1578 |
+| arbo-php | 358 / 169 | 718 / 487 | 1875 / 1569 |
+| arbo-go | 302 / 167 | 753 / 544 | 1877 / 1619 |
+| arbo-rust | 300 / 167 | 657 / 481 | 1866 / 1613 |
+| arbo-python | 381 / 171 | 744 / 492 | 2006 / 1663 |
+| arbo-js | 427 / 220 | 744 / 515 | 1948 / 1645 |
 
-PHP's overhead is consistently ~55–65ms higher than Go/Rust — `php.exe`
-interpreter startup on top of `proc_open`, vs. a compiled binary paying
-only process-spawn cost. Same accuracy across all three; all three match
-or beat a PP-OCRv6-based Node/Bun reference implementation on this sample
-at every size. Full methodology in the "wrapper benchmark" section of the
-internal `compare/RESULTS.md` companion doc (not published in this repo).
+Average wall ms / engine ms per image; `engine ms` is `arboocr_demo`'s own
+reported inference time, and the `arbo-cpp` row is the raw binary with no
+wrapper process in between — the floor the wrappers sit on. What the table
+does *not* support is a ranking of the wrappers: on this run the raw-binary
+row is slower than both compiled wrappers at `tiny`, and the `arbo-go` arm
+picked up a slow tail on a few `small` images (`engine ms` 544 for it
+against 478–515 for the other five arms, on the same binary and the same
+images). An earlier round of this comparison did rank the wrappers — PHP
+~55–65 ms above Go/Rust — but each package then installed its own arboOCR
+release, so that spread was engine-version drift between arms, not wrapper
+overhead. Every arbo arm here still beats the `ppu-paddle-ocr` Node/Bun
+reference on both similarity and wall time at every size (82.8 / 83.5 /
+84.7% at 581 / 944 / 2040 ms).
+
+Absolute milliseconds come from one session on one machine; thermal state
+and background load move every row, so these figures are comparable within
+this table only — never against another session's numbers.
+
+Measured by the internal `compare/` harness (`bench_wrappers.py`, one
+process per image, each calling the pinned binary once) in its 2026-09-14
+run; raw results in `out/bench_wrappers_n40.json`. The harness and its
+output are not published in this repo.
 
 ## License
 
